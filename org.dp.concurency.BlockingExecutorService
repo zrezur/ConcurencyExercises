@@ -1,0 +1,37 @@
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+
+import java.util.concurrent.*;
+
+public class BlockingExecutorService {
+    private final ListeningExecutorService exec;
+    private final Semaphore semaphore;
+
+    private ExecutorService someExecutorService;
+
+    public BlockingExecutorService(ExecutorService exec, int bound) {
+        this.exec = MoreExecutors.listeningDecorator(exec);
+        this.semaphore = new Semaphore(bound);
+        someExecutorService = Executors.newSingleThreadExecutor();
+    }
+
+    public <T> Future<T> submitTask(final Callable<T> command)
+            throws InterruptedException, RejectedExecutionException {
+        semaphore.acquire();
+        try {
+            ListenableFuture<T> future = exec.submit(command);
+            future.addListener(new Runnable() {
+                @Override
+                public void run() {
+                    System.out.println(String.format("Releasing form thread %s", Thread.currentThread().getName()));
+                    semaphore.release();
+                }
+            }, MoreExecutors.sameThreadExecutor());
+            return future;
+        } catch (RejectedExecutionException e) {
+            semaphore.release();
+            throw e;
+        }
+    }
+}
